@@ -1,0 +1,47 @@
+config:
+  edition: 3
+
+# PowerSync Sync Streams — defines which rows get synced to each user device.
+# Each user only receives their own data (mirrors Supabase RLS).
+# Reference: https://docs.powersync.com/sync/streams/overview
+
+streams:
+  # ── User sessions ──────────────────────────────────────────────────────────
+  user_sessions:
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM sessions WHERE user_id = auth.user_id()
+
+  # ── Chat messages ──────────────────────────────────────────────────────────
+  user_messages:
+    auto_subscribe: true
+    queries:
+      - >
+        SELECT messages.*
+        FROM messages
+        INNER JOIN sessions ON messages.session_id = sessions.id
+        WHERE sessions.user_id = auth.user_id()
+
+  # ── Quiz cards (the core "1 Unified Output" table) ─────────────────────────
+  user_quiz_cards:
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM quiz_cards WHERE user_id = auth.user_id()
+
+  # ── Articles (Phase 2 — Journal Reader) ────────────────────────────────────
+  user_articles:
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM articles WHERE user_id = auth.user_id()
+
+  # ── Feed subscriptions (Phase 2) ───────────────────────────────────────────
+  user_feed_subscriptions:
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM feed_subscriptions WHERE user_id = auth.user_id()
+
+  # ── User profile ───────────────────────────────────────────────────────────
+  user_profile:
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM profiles WHERE id = auth.user_id()

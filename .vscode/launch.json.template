@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Personal English OS (Windows)",
+      "request": "launch",
+      "type": "dart",
+      "args": [
+        "--dart-define=SUPABASE_URL=https://kexcjwpbquokdcsfdexp.supabase.co",
+        "--dart-define=SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY",
+        "--dart-define=POWERSYNC_URL=https://YOUR_INSTANCE.powersync.journeyapps.com"
+      ]
+    },
+    {
+      "name": "Personal English OS (Android)",
+      "request": "launch",
+      "type": "dart",
+      "args": [
+        "--dart-define=SUPABASE_URL=https://kexcjwpbquokdcsfdexp.supabase.co",
+        "--dart-define=SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY",
+        "--dart-define=POWERSYNC_URL=https://YOUR_INSTANCE.powersync.journeyapps.com"
+      ]
+    }
+  ]
+}
