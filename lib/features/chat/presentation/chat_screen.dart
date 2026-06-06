@@ -95,6 +95,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final controller = ref.watch(chatControllerProvider);
     final isLoading = controller is AsyncLoading;
 
+    // Show snackbar on error
+    ref.listen(chatControllerProvider, (_, next) {
+      if (next is AsyncError) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${next.error}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
+    });
+
     return Scaffold(
       appBar: AppBar(
         title: Text(activeSessionId != null ? 'Chat' : 'New Chat'),

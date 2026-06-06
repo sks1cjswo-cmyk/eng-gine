@@ -93,7 +93,7 @@ class ChatController extends AutoDisposeAsyncNotifier<void> {
 
       await for (final chunk in _ai.streamResponse(
         sessionId: sessionId,
-        history: history.where((m) => m.role == 'user').toList(),
+        history: history,
         userMessage: userMessage.trim(),
       )) {
         assistantContent = chunk;

@@ -1,8 +1,10 @@
 import 'dart:convert';
 
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../core/config/app_config.dart';
 import '../../../core/database/powersync_database.dart' as ps_db;
 
 const _uuid = Uuid();
@@ -160,55 +162,107 @@ class ChatRepository {
 // ---------------------------------------------------------------------------
 
 class ChatAiService {
-  final _client = Supabase.instance.client;
+  final _supabase = Supabase.instance.client;
 
-  /// Streams tokens from the `chat` Edge Function.
-  /// Yields accumulated text as each SSE chunk arrives.
+  /// Streams tokens from the `chat` Edge Function via direct HTTP SSE.
   Stream<String> streamResponse({
     required String sessionId,
     required List<ChatMessage> history,
     required String userMessage,
   }) async* {
+    final session = _supabase.auth.currentSession;
+    if (session == null) throw Exception('Not authenticated');
+
     final messages = [
       ...history.map((m) => {'role': m.role, 'content': m.content}),
       {'role': 'user', 'content': userMessage},
     ];
 
-    final response = await _client.functions.invoke(
-      'chat',
-      body: json.encode({
-        'session_id': sessionId,
-        'messages': messages,
-      }),
-      headers: {'Content-Type': 'application/json'},
+    final uri = Uri.parse(
+      '${AppConfig.supabaseUrl}/functions/v1/chat',
     );
 
-    // The Edge Function returns a newline-delimited JSON stream
-    final responseText = response.data as String;
-    final lines = responseText.split('\n');
-    var accumulated = '';
+    final request = http.Request('POST', uri)
+      ..headers.addAll({
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ${session.accessToken}',
+        'apikey': AppConfig.supabaseAnonKey,
+      })
+      ..body = json.encode({
+        'session_id': sessionId,
+        'messages': messages,
+      });
 
-    for (final line in lines) {
-      if (line.startsWith('data: ')) {
-        final data = line.substring(6).trim();
-        if (data == '[DONE]') break;
-        try {
-          final chunk = json.decode(data) as Map<String, dynamic>;
-          final delta = chunk['delta'] as String? ?? '';
-          accumulated += delta;
-          yield accumulated;
-        } catch (_) {
-          continue;
+    final httpClient = http.Client();
+    try {
+      final streamedResponse = await httpClient.send(request);
+
+      if (streamedResponse.statusCode != 200) {
+        final body = await streamedResponse.stream.bytesToString();
+        throw Exception('Edge Function error ${streamedResponse.statusCode}: $body');
+      }
+
+      var accumulated = '';
+      var buffer = '';
+
+      await for (final chunk in streamedResponse.stream.transform(
+        const _Utf8LineDecoder(),
+      )) {
+        buffer += chunk;
+        final lines = buffer.split('\n');
+        buffer = lines.removeLast(); // keep incomplete line
+
+        for (final line in lines) {
+          if (!line.startsWith('data: ')) continue;
+          final data = line.substring(6).trim();
+          if (data == '[DONE]') return;
+          try {
+            final parsed = json.decode(data) as Map<String, dynamic>;
+            final delta = parsed['delta'] as String? ?? '';
+            if (delta.isEmpty) continue;
+            accumulated += delta;
+            yield accumulated;
+          } catch (_) {
+            continue;
+          }
         }
       }
+    } finally {
+      httpClient.close();
     }
   }
 
   /// Triggers background session analysis after the session ends.
   Future<void> analyzeSession(String sessionId) async {
-    await _client.functions.invoke(
+    await _supabase.functions.invoke(
       'analyze-session',
       body: json.encode({'session_id': sessionId}),
     );
   }
+}
+
+/// Transforms a byte stream into a string stream (UTF-8 decoded chunks).
+class _Utf8LineDecoder
+    extends Converter<List<int>, String> {
+  const _Utf8LineDecoder();
+
+  @override
+  String convert(List<int> input) => utf8.decode(input, allowMalformed: true);
+
+  @override
+  Sink<List<int>> startChunkedConversion(Sink<String> sink) =>
+      _Utf8LineSink(sink);
+}
+
+class _Utf8LineSink extends ChunkedConversionSink<List<int>> {
+  _Utf8LineSink(this._sink);
+  final Sink<String> _sink;
+
+  @override
+  void add(List<int> chunk) {
+    _sink.add(utf8.decode(chunk, allowMalformed: true));
+  }
+
+  @override
+  void close() => _sink.close();
 }
