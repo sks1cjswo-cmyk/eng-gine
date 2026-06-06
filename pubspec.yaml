@@ -29,7 +29,7 @@ dependencies:
   flutter:
     sdk: flutter
 
-  cupertino_icons: ^1.0.8
+  cupertino_icons: ^1.0.9
 
   # State management
   flutter_riverpod: ^2.6.1
@@ -39,7 +39,7 @@ dependencies:
   go_router: ^14.8.1
 
   # Supabase (auth + DB proxy)
-  supabase_flutter: ^2.8.4
+  supabase_flutter: ^2.14.1
 
   # PowerSync (local-first SQLite sync)
   powersync: ^1.12.1
@@ -51,7 +51,7 @@ dependencies:
   uuid: ^4.5.1
   crypto: ^3.0.6
   intl: ^0.20.2
-  shared_preferences: ^2.3.5
+  shared_preferences: ^2.5.5
   path_provider: ^2.1.5
   path: ^1.9.1
   collection: ^1.19.1
@@ -59,10 +59,10 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
   riverpod_generator: ^2.6.2
-  build_runner: ^2.4.15
-  custom_lint: ^0.7.5
+  build_runner: ^2.15.0
+  custom_lint: ^0.8.1
   riverpod_lint: ^2.6.3
 
 # For information on the generic Dart part of this file, see the
