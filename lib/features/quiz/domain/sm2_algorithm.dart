@@ -13,6 +13,9 @@ class Sm2Algorithm {
   static const int qualityGood = 4;  // correct; with hesitation
   static const int qualityEasy = 5;  // perfect response
 
+  // Easy answer applies an additional interval bonus (standard SM-2 extension).
+  static const double _easyBonus = 1.3;
+
   /// Calculates the next review state given the current state and quality.
   ///
   /// Returns [Sm2Result] with updated fields to persist.
@@ -49,6 +52,11 @@ class Sm2Algorithm {
       final efDelta =
           0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02);
       newEaseFactor = currentEaseFactor + efDelta;
+
+      // Easy bonus: schedule further than Good for the same card state.
+      if (quality == qualityEasy) {
+        newIntervalDays = (newIntervalDays * _easyBonus).round();
+      }
     }
 
     // Clamp ease factor to [1.3, 2.5 + some ceiling] — min 1.3
