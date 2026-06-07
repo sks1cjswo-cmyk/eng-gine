@@ -205,9 +205,7 @@ class ChatAiService {
       var accumulated = '';
       var buffer = '';
 
-      await for (final chunk in streamedResponse.stream.transform(
-        const _Utf8LineDecoder(),
-      )) {
+      await for (final chunk in streamedResponse.stream.transform(utf8.decoder)) {
         buffer += chunk;
         final lines = buffer.split('\n');
         buffer = lines.removeLast(); // keep incomplete line
@@ -239,30 +237,4 @@ class ChatAiService {
       body: json.encode({'session_id': sessionId}),
     );
   }
-}
-
-/// Transforms a byte stream into a string stream (UTF-8 decoded chunks).
-class _Utf8LineDecoder
-    extends Converter<List<int>, String> {
-  const _Utf8LineDecoder();
-
-  @override
-  String convert(List<int> input) => utf8.decode(input, allowMalformed: true);
-
-  @override
-  Sink<List<int>> startChunkedConversion(Sink<String> sink) =>
-      _Utf8LineSink(sink);
-}
-
-class _Utf8LineSink extends ChunkedConversionSink<List<int>> {
-  _Utf8LineSink(this._sink);
-  final Sink<String> _sink;
-
-  @override
-  void add(List<int> chunk) {
-    _sink.add(utf8.decode(chunk, allowMalformed: true));
-  }
-
-  @override
-  void close() => _sink.close();
 }
