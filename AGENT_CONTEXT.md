@@ -288,6 +288,11 @@ created_at, ended_at
    - 문장/단어 탭 → enrich 팝업 (Chat과 동일 로직 재사용)
 6. **[Phase 2] 카드 브라우저 탭** — 저장된 카드 전체 보기, enrich_status 필터
 7. **[Phase 2] 통계 탭** — 복습 이력, 오류 카테고리별 분포
+8. **[Phase 3] Module C: YouTube 클립**
+   - 설계 문서: `docs/YOUTUBE_CLIP_SOURCING.md`
+   - 카드(표현/패턴)에 실제 원어민 용례 클립을 붙이는 수집·인덱싱·서빙 전략
+   - 선행 스파이크: Windows에서 WebView2 기반 유튜브 iframe 재생 검증
+     (`youtube_player_iframe`은 Windows 미지원 — 주 타겟 플랫폼 리스크)
 
 ---
 
