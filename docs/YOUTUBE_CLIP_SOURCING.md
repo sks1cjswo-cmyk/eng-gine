@@ -36,6 +36,10 @@
    여러 패턴에 동시 매칭되고, 나중에 추가한 패턴이 과거 캡처에 소급 적용된다.
    수작업 비용이 패턴 수에 비례하지 않고 **누적**된다.
 
+> **24시간 크롤러 + 자체 ASR 방식을 검토했는가?** → **§14.** 결론: 크롤러는 만든다.
+> 7단계 중 6단계가 합법이고, 막히는 한 단계(음성 확보)는 **제작자 서면 허가**로
+> 뚫는다. 병목은 통념과 달리 "서칭"이 아니다.
+
 ---
 
 ## 1. 검증된 제약 사실
@@ -319,10 +323,16 @@ create table public.yt_channels (
   title             text,
   accent            text check (accent in ('us','uk','au','ca','ie','other')),
   trust_score       real not null default 0.5,
-  -- CC BY 출처 표기 의무 (§8)
+  -- CC BY 출처 표기 의무 (§8.4)
   attribution_name  text,
-  attribution_url   text
+  attribution_url   text,
+  -- 제작자 서면 허가 (§14.5-①). 크롤러의 음성 확보 단계는 granted 만 대상
+  permission_status text not null default 'none'
+    check (permission_status in ('none','requested','granted','denied','withdrawn')),
+  permission_at     timestamptz,
+  permission_note   text                       -- 증빙 위치 (tools/corpus/permissions/*.yaml)
 );
+create index yt_channels_permission_idx on public.yt_channels (permission_status);
 
 create table public.yt_videos (
   id                    text primary key,      -- 11자 video id (무기한 보관 가능)
@@ -694,6 +704,12 @@ lib/features/youtube/
 | 8 | 앱 클립 UI (`clip_carousel`) | 사용자에게 노출 | 2일 |
 | 9 | 수동 캡처 도구 (§8.3) | 회화체 공백 보강 | 3일 |
 | 10 | YouGlish 위젯 폴백 탭 (§2) | 커버리지 0 대응 | 0.5일 |
+| **∥** | **채널 허가 요청 발송** (§14.5-①) | 승낙 50채널 = 2,500시간 | 병행, 회신 대기 |
+| 11 | 크롤러 + WhisperX 파이프라인 (§14.8) | 허가 풀 자동 확장 | 4일 |
+
+**∥ 표시는 병행 작업이다.** 허가 요청은 회신에 수 주가 걸리므로 **1번(YODAS 검증)과
+동시에 발송을 시작한다.** YODAS로 앱을 띄우는 동안 허가가 쌓이고, 11번 시점에
+화이트리스트가 준비되어 있게 만드는 것이 전체 일정을 가장 많이 단축한다.
 
 **0번과 1번을 먼저 하라.** 둘 중 하나가 막히면 이후 계획이 전부 바뀐다.
 0번이 막히면 Windows UX 재설계, 1번이 막히면 §8 수동 트랙이 주력이 된다.
@@ -725,8 +741,171 @@ lib/features/youtube/
 
 ---
 
+## 14. 24시간 크롤러 + 자체 ASR 방식 검토
+
+> "크롤러를 개발해서 매일 검색해서 영상을 수집하고 스크립트를 자동 생성한 다음
+> 패턴 매칭을 하는 건 안 될까? 유튜브 임베드를 통하기만 하면 어떤 영상이든
+> 사용 가능한 거잖아. 문제는 서칭인데 이걸 크롤러로 24시간 수집."
+
+**결론: 크롤러는 만든다. 자체 ASR도 좋은 판단이다. 단 대상 영상 풀을 바꾼다.**
+
+### 14.1 임베드에 대한 인식은 정확하다
+
+YouTube ToS 원문:
+
+> "You may view or listen to Content for your personal, non-commercial use.
+> **You may also show YouTube videos through the embeddable YouTube player.**"
+
+임베드 재생은 **명시적으로 허용된 사용**이다. `status.embeddable == true`인 공개
+영상이면 CC 라이선스든 표준 라이선스든 재생할 수 있다. 저작권 측면에서도 임베드는
+서버에 복제가 일어나지 않아 대부분 관할에서 문제되지 않는다.
+
+**다만 이 허용이 커버하는 건 파이프라인의 마지막 한 단계다.** 아래 §14.2 참조.
+
+### 14.2 7단계로 쪼개면 문제는 1개뿐
+
+| # | 단계 | 수단 | 판정 |
+|---|---|---|---|
+| 1 | 영상 발견·열거 | `playlistItems.list` (공식 API) | ✅ 합법. 1 unit/50개 |
+| 2 | 메타 게이트 | `videos.list` (공식 API) | ✅ 합법 |
+| 3 | **음성 확보** | **?** | ❌ **유일한 문제** |
+| 4 | ASR 스크립트 생성 | 로컬 WhisperX | ✅ 문제 없음 |
+| 5 | 패턴 매칭 | 로컬 spaCy | ✅ 문제 없음 |
+| 6 | 문장 단편 저장 | 자체 DB | ✅ 인용 범위 |
+| 7 | 재생 | 공식 iframe | ✅ **ToS 명시 허용** |
+
+**7번의 허용이 3번을 커버하지 않는다.** 다른 조항이다. ToS는 자동화 접근에 대해
+"you may access the Service using automated means **with YouTube's prior written
+permission**"이라고 하고, 다운로드는 허용 목록에 없다.
+
+### 14.3 ★ "문제는 서칭"이라는 진단이 틀렸다
+
+이게 이 절의 핵심이다.
+
+- 유튜브 검색은 **자막을 검색하지 않는다**(사실 1). 그래서 크롤러가 "검색"으로
+  새로 찾아낼 것이 애초에 없다. 표현으로 검색하는 기능이 존재하지 않는다.
+- 크롤러가 실제로 하는 일은 검색이 아니라 **전수 열거 + 로컬 인덱싱**이다.
+  검색은 유튜브가 아니라 **당신의 인덱스**에서 일어난다.
+- 그리고 그 열거는 **이미 완전히 합법이고 매우 싸다.** `playlistItems`가 50개당
+  1 unit이니 하루 10,000 units로 **50만 영상**을 열거할 수 있다.
+
+**즉 서칭은 병목이 아니다. 이미 해결되어 있다. 진짜 병목은 3번 음성 확보다.**
+크롤러를 24시간 돌려도 1·2번만 빨라지고 3번에서 그대로 막힌다.
+
+### 14.4 자체 ASR은 오히려 유튜브 자막보다 낫다
+
+이 부분 판단은 정확하다. WhisperX를 쓰면:
+
+| | 유튜브 자막 | 자체 ASR (WhisperX) |
+|---|---|---|
+| 타임스탬프 정밀도 | 큐 단위 (±0.5s) | **단어 단위 (±50ms)** |
+| 구두점 | manual은 있고 auto는 없음 | **일관되게 있음** |
+| 품질 편차 | manual/auto 혼재 | **균일** |
+| 문장 분할 정확도 | auto는 사실상 불가 | **정확** |
+
+클립 경계 품질이 이 기능의 체감 품질을 좌우하므로, 자체 ASR은 비용을 들일 가치가
+있다. **§4-[1]의 구두점 복원 단계 전체가 사라진다.**
+
+ASR 비용:
+```
+2,500시간 ÷ faster-whisper large-v3 (약 15x realtime)  ≈ 170 GPU-hours
+  RTX 4090 보유 시    → 약 1주 (야간 배치)
+  클라우드 GPU 렌탈   → $100~200 (1회성)
+```
+
+### 14.5 3번을 뚫는 합법 경로
+
+#### ① 제작자 서면 허가 ★ 최선
+
+ToS가 **명시적으로 허용하는 유일한 경로**다("prior written permission"). 동시에
+저작권 층도 해결된다. 그리고 영어 학습 앱은 제안할 명분이 좋다 — **당신이 제작자에게
+조회수를 보내준다.**
+
+```
+50채널 × 200영상 × 평균 15분 = 2,500시간
+```
+
+§7.2 기준 **2,000~4,000시간이면 상위 5,000 패턴을 커버**한다. 즉 **50채널 승낙만
+받으면 규모가 충분하다.** 교육 채널 200곳에 제안해 20~30%가 승낙하면 달성된다.
+
+메일 템플릿: `docs/templates/channel_permission_request.md`
+
+허가받은 채널은 `yt_channels.permission_status='granted'`로 표시하고, 허가 증빙
+(메일 원문·날짜)을 보관한다. 크롤러는 **이 화이트리스트 안에서만 3번을 수행**한다.
+
+#### ② CC BY 크롤러 — 매일 자동으로 풀이 커진다
+
+원하던 "매일 검색해서 수집"이 여기서 그대로 성립한다. 대상만 CC BY로 한정된다.
+
+```
+매일: 채널 업로드 열거 → videos.list → status.license == 'creativeCommon' 필터
+      → 신규 CC BY 영상이 매일 자동 유입
+```
+
+CC BY는 저작권을 해결한다(상업적 사용도 출처 표기하면 가능). 접근 경로는 여전히
+회색이라 ①과 결합하는 게 좋다 — **CC BY 영상의 제작자는 이미 재사용을 허락한
+상태이므로 허가 요청 승낙률이 훨씬 높다.** ②로 후보를 찾고 ①로 허가를 받는 조합이
+가장 효율적이다.
+
+#### ③ 공개 라이선스 데이터셋 (§3) — 콜드스타트
+
+YODAS로 초기 400~500시간을 즉시 확보한다. ①의 허가를 모으는 동안 앱이 이미 동작한다.
+
+### 14.6 yt-dlp 대량 수집은 기술적으로도 성립하지 않는다
+
+법적 판단을 완전히 제외하고, **24시간 무인 운영이라는 전제 자체가 깨진다.**
+2026년 현재:
+
+- **PO Token이 video ID마다 바인딩**된다 → 영상마다 토큰을 새로 발급해야 한다
+- **SABR**이 다운로더 연결을 적극적으로 끊는다
+- 다운로더들이 수년간 의존한 **`android_sdkless` 클라이언트가 폐기 중**이다
+- yt-dlp 위키 표현: **"PO token을 넘겨도 대다수 케이스에서 봇 체크를 우회하지 못한다"**
+
+즉 무인 크롤러가 아니라 **매주 깨지는 파이프라인을 사람이 계속 고치는 일**이 된다.
+법적 리스크를 감수하겠다고 결정하더라도 이 방식으로는 24/7 자동화가 안 된다.
+
+### 14.7 리스크 등급 (판단 근거용)
+
+| 등급 | 방식 | 저작권 | 접근 약관 | 기술 안정성 | 실무 리스크 |
+|---|---|---|---|---|---|
+| 1 | 공개 데이터셋 (YODAS) | ✅ | ✅ | ✅ | 없음 |
+| 1 | 제작자 서면 허가 | ✅ | ✅ | ✅ | 없음 |
+| 2 | 사람이 캡처 (§8) | 인용 범위 | 자동화 아님 | ✅ | 낮음 |
+| 3 | CC BY 영상 yt-dlp | ✅ | ❌ | ❌ | 낮음 (제작자 신고 동기 없음) / 계약 위반 성립 |
+| 4 | 일반 영상 yt-dlp 대량 | ❌ | ❌ | ❌ | 중~높음 |
+
+**"위반하지 않는 선"이라는 제약에서는 1~2등급만 쓴다.** 그리고 §14.5에서 보인 것처럼
+1~2등급만으로도 규모가 충분하다 — 타협이 아니다.
+
+### 14.8 최종 크롤러 설계
+
+크롤러는 만든다. 이렇게 만든다.
+
+```
+── 매일 (클라우드 OK, 공식 API만 사용 → IP 차단·약관 문제 없음) ──────────
+  1. 허가 채널 + CC BY 채널의 신규 업로드 발견   playlistItems.list
+  2. 게이트 + 라이선스 확인                      videos.list
+  3. 30일 메타데이터 갱신 큐 처리 (§4-[5], 컴플라이언스 의무)
+  4. 커버리지 갭 리포트 → 다음 허가 요청 대상 채널 추천
+  → Supabase Edge Function + cron
+
+── 주 1회 (로컬 GPU, 허가·CC BY 화이트리스트 내에서만) ──────────────────
+  5. 신규 영상 음성 → WhisperX → 단어 단위 타임스탬프 스크립트
+  6. 문장 분할 + 패턴 매칭 L1~L4 (구두점 복원 단계 불필요)
+  7. 점수화 → 검수 큐 → Supabase upsert
+```
+
+원래 구상과 다른 점은 **딱 하나**다: 3번(음성 확보)을 **허가받은 채널 + CC BY
+영상**으로 한정한다. 크롤러 코드, 24시간 운영, 자체 ASR, 패턴 매칭은 전부 그대로다.
+
+바뀌는 것은 **"어떤 영상을 대상으로 하는가"이고, 이건 코드가 아니라 화이트리스트
+테이블 한 개의 문제다.** 그래서 나중에 허가가 늘어나면 코드 변경 없이 확장된다.
+
+---
+
 ## 참고 자료
 
+- [YouTube Terms of Service](https://www.youtube.com/static?template=terms) (임베드 허용, 자동화 접근 사전 서면 허가)
 - [YouTube API Services — Developer Policies](https://developers.google.com/youtube/terms/developer-policies) (30일 저장 규칙, 캐싱 금지)
 - [YouTube API Services Terms of Service](https://developers.google.com/youtube/terms/api-services-terms-of-service)
 - [captions.list](https://developers.google.com/youtube/v3/docs/captions/list) (소유자 OAuth 필요)
@@ -738,3 +917,4 @@ lib/features/youtube/
 - [YouGlish ToS](https://youglish.com/terms) / [Widget](https://youglish.com/api/doc/widget) / [JS API](https://youglish.com/api/doc/js-api)
 - [youtube_player_iframe (Windows 미지원)](https://pub.dev/packages/youtube_player_iframe) / [webview_windows](https://pub.dev/packages/webview_windows)
 - [WhisperX (단어 단위 정렬)](https://github.com/m-bain/whisperx)
+- [yt-dlp PO Token Guide](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide) / [SABR 다운로더 PR #13515](https://github.com/yt-dlp/yt-dlp/pull/13515) (§14.6 기술 불안정성)
