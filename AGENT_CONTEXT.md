@@ -289,10 +289,16 @@ created_at, ended_at
 6. **[Phase 2] 카드 브라우저 탭** — 저장된 카드 전체 보기, enrich_status 필터
 7. **[Phase 2] 통계 탭** — 복습 이력, 오류 카테고리별 분포
 8. **[Phase 3] Module C: YouTube 클립**
-   - 설계 문서: `docs/YOUTUBE_CLIP_SOURCING.md`
+   - 설계 문서: `docs/YOUTUBE_CLIP_SOURCING.md` (정책 준수판)
    - 카드(표현/패턴)에 실제 원어민 용례 클립을 붙이는 수집·인덱싱·서빙 전략
-   - 선행 스파이크: Windows에서 WebView2 기반 유튜브 iframe 재생 검증
-     (`youtube_player_iframe`은 Windows 미지원 — 주 타겟 플랫폼 리스크)
+   - 스크래핑 없이 구현: 문장+타임스탬프는 YODAS(CC 라이선스) 데이터셋에서,
+     유튜브에는 공식 API 메타 조회와 공식 iframe 재생만 요청
+   - **선행 검증 2개 (둘 중 하나 막히면 계획 전면 변경)**
+     1. Windows WebView2 기반 유튜브 iframe 재생
+        (`youtube_player_iframe`은 Windows 미지원 — 주 타겟 플랫폼 리스크)
+     2. YODAS 영어 manual 서브셋 스키마·규모 — `tools/corpus/00_verify_yodas.py`
+   - **컴플라이언스 의무**: API 메타데이터는 30일 내 갱신 또는 삭제, 영상 생존
+     30일마다 확인 → `yt-metadata-refresh` 크론은 선택이 아님
 
 ---
 
